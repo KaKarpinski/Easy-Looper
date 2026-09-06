@@ -66,12 +66,12 @@ void MidiMapper::storeBinding (int index, const MidiBinding& binding) noexcept
 
 void MidiMapper::startLearn (LooperCommand command) noexcept
 {
-    const bool haveLastMessage = lastSequence_.load (std::memory_order_relaxed) > 0;
-    staleType_.store (lastType_.load (std::memory_order_relaxed), std::memory_order_relaxed);
-    staleChannel_.store (lastChannel_.load (std::memory_order_relaxed), std::memory_order_relaxed);
-    staleNumber_.store (lastNumber_.load (std::memory_order_relaxed), std::memory_order_relaxed);
-    staleValue_.store (lastValue_.load (std::memory_order_relaxed), std::memory_order_relaxed);
-    staleArmed_.store (haveLastMessage, std::memory_order_relaxed);
+    const bool haveLastPress = lastPressSequence_.load (std::memory_order_relaxed) > 0;
+    staleType_.store (lastPressType_.load (std::memory_order_relaxed), std::memory_order_relaxed);
+    staleChannel_.store (lastPressChannel_.load (std::memory_order_relaxed), std::memory_order_relaxed);
+    staleNumber_.store (lastPressNumber_.load (std::memory_order_relaxed), std::memory_order_relaxed);
+    staleValue_.store (lastPressValue_.load (std::memory_order_relaxed), std::memory_order_relaxed);
+    staleArmed_.store (haveLastPress, std::memory_order_relaxed);
     learnTarget_.store (static_cast<int> (command), std::memory_order_relaxed);
 }
 
@@ -113,82 +113,56 @@ void MidiMapper::remember (const IncomingMidi& message) noexcept
     lastNumber_.store (message.number, std::memory_order_relaxed);
     lastValue_.store (message.value, std::memory_order_relaxed);
     lastSequence_.fetch_add (1, std::memory_order_relaxed);
+
+    if (! isLearnCandidate (message))
+        return;
+
+    lastPressType_.store (static_cast<int> (message.type), std::memory_order_relaxed);
+    lastPressChannel_.store (message.channel, std::memory_order_relaxed);
+    lastPressNumber_.store (message.number, std::memory_order_relaxed);
+    lastPressValue_.store (message.value, std::memory_order_relaxed);
+    lastPressSequence_.fetch_add (1, std::memory_order_relaxed);
 }
 
-bool MidiMapper::isOnOffValue (int value) const noexcept
+bool MidiMapper::isNoteRelease (const IncomingMidi& message) const noexcept
 {
-    return value == 0 || value == 127;
-}
-
-bool MidiMapper::isPress (const IncomingMidi& message) const noexcept
-{
-    switch (message.type)
-    {
-        case MidiMessageType::Note:
-            return message.value > 0;
-
-        case MidiMessageType::ControlChange:
-            return message.value > 0;
-
-        case MidiMessageType::ProgramChange:
-            return true;
-
-        case MidiMessageType::Unknown:
-            return false;
-    }
-    return false;
+    return message.type == MidiMessageType::Note && message.value <= 0;
 }
 
 bool MidiMapper::isLearnCandidate (const IncomingMidi& message) const noexcept
 {
-    return isPress (message);
+    if (message.type == MidiMessageType::Unknown)
+        return false;
+
+    return ! isNoteRelease (message);
 }
 
-bool MidiMapper::sameControl (const IncomingMidi& a, const IncomingMidi& b) const noexcept
+bool MidiMapper::sameAddress (const IncomingMidi& a, const IncomingMidi& b) const noexcept
 {
-    MidiBinding binding;
-    binding.assigned = true;
-    binding.type = a.type;
-    binding.channel = a.channel;
-    binding.number = a.number;
-    binding.value = a.value;
-    return sameControl (binding, b);
+    return a.type == b.type
+        && a.channel == b.channel
+        && a.number == b.number;
 }
 
-bool MidiMapper::sameControl (const MidiBinding& binding, const IncomingMidi& message) const noexcept
+bool MidiMapper::sameIdentity (const IncomingMidi& a, const IncomingMidi& b) const noexcept
+{
+    return sameAddress (a, b) && a.value == b.value;
+}
+
+bool MidiMapper::sameIdentity (const MidiBinding& binding, const IncomingMidi& message) const noexcept
 {
     if (! binding.assigned)
         return false;
 
-    if (binding.type != message.type || binding.channel != message.channel || binding.number != message.number)
-        return false;
-
-    if (binding.type == MidiMessageType::ControlChange
-        && ! isOnOffValue (binding.value)
-        && ! isOnOffValue (message.value))
-    {
-        return binding.value == message.value;
-    }
-
-    return true;
+    return binding.type == message.type
+        && binding.channel == message.channel
+        && binding.number == message.number
+        && binding.value == message.value;
 }
 
 bool MidiMapper::matches (const MidiBinding& binding, const IncomingMidi& message) const noexcept
 {
-    if (! sameControl (binding, message))
-        return false;
-
-    if (binding.type == MidiMessageType::ControlChange && binding.value == 0)
-        return true;
-
-    if (binding.type == MidiMessageType::ControlChange
-        && ! isOnOffValue (binding.value)
-        && ! isOnOffValue (message.value))
-    {
-        return message.value == binding.value;
-    }
-
-    return isPress (message);
+    return sameIdentity (binding, message);
 }
 
 bool MidiMapper::shouldIgnoreStaleLearnMessage (const IncomingMidi& message) noexcept
@@ -202,15 +176,16 @@ bool MidiMapper::shouldIgnoreStaleLearnMessage (const IncomingMidi& message) noe
     stale.number = staleNumber_.load (std::memory_order_relaxed);
     stale.value = staleValue_.load (std::memory_order_relaxed);
 
-    if (! sameControl (stale, message))
-        return false;
+    if (sameIdentity (stale, message))
+        return true;
 
-    // Keep ignoring the previous pedal (FL often repeats it) until it is released.
-    // A different pedal is accepted immediately by the caller.
-    if (! isPress (message))
+    if (sameAddress (stale, message) && isNoteRelease (message))
+    {
         staleArmed_.store (false, std::memory_order_relaxed);
+        return true;
+    }
 
-    return true;
+    return false;
 }
 
 void MidiMapper::clearConflicts (int keepIndex, const MidiBinding& binding) noexcept
@@ -223,7 +198,7 @@ void MidiMapper::clearConflicts (int keepIndex, const MidiBinding& binding) noex
             continue;
 
         const auto existing = loadBinding (i);
-        if (sameControl (existing, identity))
+        if (sameIdentity (existing, identity))
         {
             MidiBinding cleared;
             storeBinding (i, cleared);

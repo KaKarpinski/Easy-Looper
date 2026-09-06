@@ -180,6 +180,46 @@ int main()
     expect (valueMapper.process (ccPadA).value_or (LooperCommand::Undo) == LooperCommand::Record, "same CC number value 1 is Record");
     expect (valueMapper.process (ccPadB).value_or (LooperCommand::Undo) == LooperCommand::Clear, "same CC number value 2 is Clear");
 
+    MidiMapper chocolateMapper;
+    IncomingMidi padA { MidiMessageType::ControlChange, 1, 20, 1 };
+    IncomingMidi padB { MidiMessageType::ControlChange, 1, 20, 2 };
+    IncomingMidi padC { MidiMessageType::ControlChange, 1, 20, 3 };
+    IncomingMidi padD { MidiMessageType::ControlChange, 1, 20, 0 };
+    IncomingMidi padEcho { MidiMessageType::ControlChange, 1, 20, 1 };
+    chocolateMapper.startLearn (LooperCommand::Record);
+    chocolateMapper.process (padA);
+    chocolateMapper.startLearn (LooperCommand::Overdub);
+    chocolateMapper.process (padEcho);
+    expect (chocolateMapper.isLearning(), "same type/channel/number echo is ignored when value matches last pad");
+    chocolateMapper.process (padB);
+    chocolateMapper.startLearn (LooperCommand::PlayStop);
+    chocolateMapper.process (padB);
+    chocolateMapper.process (padC);
+    chocolateMapper.startLearn (LooperCommand::Undo);
+    chocolateMapper.process (padC);
+    chocolateMapper.process (padD);
+    expect (chocolateMapper.process (padA).value_or (LooperCommand::Clear) == LooperCommand::Record, "Chocolate pad value 1 = Record");
+    expect (chocolateMapper.process (padB).value_or (LooperCommand::Clear) == LooperCommand::Overdub, "Chocolate pad value 2 = Overdub");
+    expect (chocolateMapper.process (padC).value_or (LooperCommand::Clear) == LooperCommand::PlayStop, "Chocolate pad value 3 = Play/Stop");
+    expect (chocolateMapper.process (padD).value_or (LooperCommand::Clear) == LooperCommand::Undo, "Chocolate pad value 0 = Undo");
+    expect (chocolateMapper.getBinding (LooperCommand::Record).value == 1, "Record stores learned value");
+    expect (chocolateMapper.getBinding (LooperCommand::Overdub).value == 2, "Overdub stores learned value");
+
+    IncomingMidi sameNoteA { MidiMessageType::Note, 1, 60, 10 };
+    IncomingMidi sameNoteB { MidiMessageType::Note, 1, 60, 20 };
+    IncomingMidi sameNoteOff { MidiMessageType::Note, 1, 60, 0 };
+    MidiMapper velocityMapper;
+    velocityMapper.startLearn (LooperCommand::Record);
+    velocityMapper.process (sameNoteA);
+    velocityMapper.startLearn (LooperCommand::Overdub);
+    velocityMapper.process (sameNoteA);
+    velocityMapper.process (sameNoteOff);
+    expect (velocityMapper.isLearning(), "note-off of the shared note does not bind Overdub");
+    velocityMapper.process (sameNoteB);
+    expect (velocityMapper.process (sameNoteA).value_or (LooperCommand::Clear) == LooperCommand::Record, "same note velocity 10 = Record");
+    expect (velocityMapper.process (sameNoteB).value_or (LooperCommand::Clear) == LooperCommand::Overdub, "same note velocity 20 = Overdub");
+    expect (! velocityMapper.process (sameNoteOff).has_value(), "shared note-off does not fire a command");
+
     expect (mapper.process (noteCOn).has_value() == false, "unmapped pedal does not fire a command");
 
     if (gFailures != 0)

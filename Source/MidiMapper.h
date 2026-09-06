@@ -63,11 +63,11 @@ public:
     std::uint32_t lastSequence() const noexcept { return lastSequence_.load (std::memory_order_relaxed); }
 
 private:
-    bool isPress (const IncomingMidi& message) const noexcept;
+    bool isNoteRelease (const IncomingMidi& message) const noexcept;
     bool isLearnCandidate (const IncomingMidi& message) const noexcept;
-    bool isOnOffValue (int value) const noexcept;
-    bool sameControl (const IncomingMidi& a, const IncomingMidi& b) const noexcept;
-    bool sameControl (const MidiBinding& binding, const IncomingMidi& message) const noexcept;
+    bool sameAddress (const IncomingMidi& a, const IncomingMidi& b) const noexcept;
+    bool sameIdentity (const IncomingMidi& a, const IncomingMidi& b) const noexcept;
+    bool sameIdentity (const MidiBinding& binding, const IncomingMidi& message) const noexcept;
     bool matches (const MidiBinding& binding, const IncomingMidi& message) const noexcept;
     bool shouldIgnoreStaleLearnMessage (const IncomingMidi& message) noexcept;
     void remember (const IncomingMidi& message) noexcept;
@@ -90,4 +90,10 @@ private:
     std::atomic<int> lastNumber_ { 0 };
     std::atomic<int> lastValue_ { 0 };
     std::atomic<std::uint32_t> lastSequence_ { 0 };
+
+    std::atomic<int> lastPressType_ { 0 };
+    std::atomic<int> lastPressChannel_ { 0 };
+    std::atomic<int> lastPressNumber_ { 0 };
+    std::atomic<int> lastPressValue_ { 0 };
+    std::atomic<std::uint32_t> lastPressSequence_ { 0 };
 };

@@ -1,3 +1,3 @@
 #pragma once
 
-inline constexpr const char* kEasyLooperVersion = "0.001";
+inline constexpr const char* kEasyLooperVersion = "0.002";

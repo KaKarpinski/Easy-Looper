@@ -16,7 +16,8 @@ namespace
 
         return "  ·  " + juce::String (MidiMapper::typeName (binding.type))
              + " ch" + juce::String (binding.channel)
-             + " #" + juce::String (binding.number);
+             + " #" + juce::String (binding.number)
+             + " v" + juce::String (binding.value);
     }
 
     void updateLearnButton (juce::TextButton& button, const juce::String& title, const MidiBinding& binding)
