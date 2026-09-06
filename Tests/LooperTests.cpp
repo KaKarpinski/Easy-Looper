@@ -104,25 +104,83 @@ int main()
     expect (looper.getState() == Looper::State::Empty, "Clear always returns to Empty");
 
     MidiMapper mapper;
-    IncomingMidi noteOn { MidiMessageType::Note, 3, 40, 100 };
-    IncomingMidi noteOff { MidiMessageType::Note, 3, 40, 0 };
+    IncomingMidi noteAOn { MidiMessageType::Note, 1, 36, 100 };
+    IncomingMidi noteAOff { MidiMessageType::Note, 1, 36, 0 };
+    IncomingMidi noteBOn { MidiMessageType::Note, 1, 37, 100 };
+    IncomingMidi noteBOff { MidiMessageType::Note, 1, 37, 0 };
+    IncomingMidi noteCOn { MidiMessageType::Note, 1, 38, 110 };
     IncomingMidi ccOn { MidiMessageType::ControlChange, 1, 64, 127 };
     IncomingMidi ccOff { MidiMessageType::ControlChange, 1, 64, 0 };
+    IncomingMidi pcA { MidiMessageType::ProgramChange, 1, 0, 0 };
+    IncomingMidi pcB { MidiMessageType::ProgramChange, 1, 1, 0 };
 
     mapper.startLearn (LooperCommand::Record);
-    expect (! mapper.process (noteOff).has_value(), "learn ignores note release");
-    expect (! mapper.process (noteOn).has_value(), "learn consumes the press and does not fire a command");
+    expect (! mapper.process (noteAOff).has_value(), "learn ignores note release");
+    expect (! mapper.process (noteAOn).has_value(), "learn consumes the press and does not fire a command");
     expect (! mapper.isLearning(), "learn finishes after a press");
 
-    const auto recordCmd = mapper.process (noteOn);
+    const auto recordCmd = mapper.process (noteAOn);
     expect (recordCmd.has_value() && *recordCmd == LooperCommand::Record, "learned note press triggers Record");
-    expect (! mapper.process (noteOff).has_value(), "note release does not retrigger");
+    expect (! mapper.process (noteAOff).has_value(), "note release does not retrigger");
 
     mapper.startLearn (LooperCommand::Overdub);
-    expect (! mapper.process (ccOn).has_value(), "learn CC press");
-    const auto overdubCmd = mapper.process (ccOn);
-    expect (overdubCmd.has_value() && *overdubCmd == LooperCommand::Overdub, "learned CC press triggers Overdub");
+    expect (! mapper.process (noteAOn).has_value(), "second learn ignores echo of the previous pedal");
+    expect (! mapper.process (noteAOn).has_value(), "repeated echoes of A still do not bind Overdub");
+    expect (mapper.isLearning(), "still learning Overdub after stale echo");
+    expect (mapper.getBinding (LooperCommand::Record).assigned, "Record mapping survives the echo");
+    expect (! mapper.process (noteBOn).has_value(), "learn B for Overdub");
+    expect (! mapper.isLearning(), "Overdub learn finishes on pedal B");
+
+    const auto stillRecord = mapper.process (noteAOn);
+    expect (stillRecord.has_value() && *stillRecord == LooperCommand::Record, "A still triggers Record after learning B");
+    expect (! mapper.process (noteAOff).has_value(), "A release does not fire");
+    const auto overdubCmd = mapper.process (noteBOn);
+    expect (overdubCmd.has_value() && *overdubCmd == LooperCommand::Overdub, "B triggers Overdub");
+    expect (! mapper.process (noteBOff).has_value(), "B release does not retrigger");
+
+    mapper.startLearn (LooperCommand::PlayStop);
+    expect (! mapper.process (ccOn).has_value(), "learn CC press for Play/Stop");
+    const auto playCmd = mapper.process (ccOn);
+    expect (playCmd.has_value() && *playCmd == LooperCommand::PlayStop, "learned CC press triggers Play/Stop");
     expect (! mapper.process (ccOff).has_value(), "CC value 0 does not retrigger");
+    expect (mapper.process (noteAOn).value_or (LooperCommand::Clear) == LooperCommand::Record, "A still Record after third learn");
+    expect (mapper.process (noteBOn).value_or (LooperCommand::Clear) == LooperCommand::Overdub, "B still Overdub after third learn");
+
+    MidiMapper stealMapper;
+    stealMapper.startLearn (LooperCommand::Record);
+    stealMapper.process (noteAOn);
+    stealMapper.process (noteAOff);
+    stealMapper.startLearn (LooperCommand::Overdub);
+    stealMapper.process (noteAOn); // stale echo
+    stealMapper.process (noteAOff);
+    stealMapper.process (noteAOn); // real re-press of the same pedal
+    expect (! stealMapper.getBinding (LooperCommand::Record).assigned, "re-learning A on Overdub clears Record");
+    expect (stealMapper.getBinding (LooperCommand::Overdub).assigned, "Overdub now owns pedal A");
+    const auto stolen = stealMapper.process (noteAOn);
+    expect (stolen.has_value() && *stolen == LooperCommand::Overdub, "A now triggers Overdub only");
+
+    MidiMapper pcMapper;
+    pcMapper.startLearn (LooperCommand::Record);
+    pcMapper.process (pcA);
+    pcMapper.startLearn (LooperCommand::Undo);
+    pcMapper.process (pcA); // host echo of last PC
+    expect (pcMapper.isLearning(), "PC echo does not finish the next learn");
+    pcMapper.process (pcB);
+    expect (pcMapper.process (pcA).value_or (LooperCommand::Clear) == LooperCommand::Record, "PC A stays Record");
+    expect (pcMapper.process (pcB).value_or (LooperCommand::Clear) == LooperCommand::Undo, "PC B triggers Undo");
+
+    MidiMapper valueMapper;
+    IncomingMidi ccPadA { MidiMessageType::ControlChange, 1, 80, 1 };
+    IncomingMidi ccPadB { MidiMessageType::ControlChange, 1, 80, 2 };
+    valueMapper.startLearn (LooperCommand::Record);
+    valueMapper.process (ccPadA);
+    valueMapper.startLearn (LooperCommand::Clear);
+    valueMapper.process (ccPadA); // echo of pad A
+    valueMapper.process (ccPadB);
+    expect (valueMapper.process (ccPadA).value_or (LooperCommand::Undo) == LooperCommand::Record, "same CC number value 1 is Record");
+    expect (valueMapper.process (ccPadB).value_or (LooperCommand::Undo) == LooperCommand::Clear, "same CC number value 2 is Clear");
+
+    expect (mapper.process (noteCOn).has_value() == false, "unmapped pedal does not fire a command");
 
     if (gFailures != 0)
     {

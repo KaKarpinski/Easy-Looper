@@ -32,6 +32,7 @@ private:
     juce::Label midiNumberLabel_;
     juce::Label midiValueLabel_;
     juce::Label learnStatusLabel_;
+    juce::Label versionLabel_;
 
     juce::TextButton learnRecordButton_ { "Learn Record" };
     juce::TextButton learnPlayStopButton_ { "Learn Play/Stop" };

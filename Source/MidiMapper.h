@@ -64,12 +64,26 @@ public:
 
 private:
     bool isPress (const IncomingMidi& message) const noexcept;
+    bool isLearnCandidate (const IncomingMidi& message) const noexcept;
+    bool isOnOffValue (int value) const noexcept;
+    bool sameControl (const IncomingMidi& a, const IncomingMidi& b) const noexcept;
+    bool sameControl (const MidiBinding& binding, const IncomingMidi& message) const noexcept;
     bool matches (const MidiBinding& binding, const IncomingMidi& message) const noexcept;
+    bool shouldIgnoreStaleLearnMessage (const IncomingMidi& message) noexcept;
     void remember (const IncomingMidi& message) noexcept;
     void assignLearned (const IncomingMidi& message) noexcept;
+    void clearConflicts (int keepIndex, const MidiBinding& binding) noexcept;
 
-    MidiBinding bindings_[kNumLooperCommands] {};
+    MidiBinding loadBinding (int index) const noexcept;
+    void storeBinding (int index, const MidiBinding& binding) noexcept;
+
+    std::atomic<std::uint32_t> packedBindings_[kNumLooperCommands] {};
     std::atomic<int> learnTarget_ { -1 };
+    std::atomic<bool> staleArmed_ { false };
+    std::atomic<int> staleType_ { 0 };
+    std::atomic<int> staleChannel_ { 0 };
+    std::atomic<int> staleNumber_ { 0 };
+    std::atomic<int> staleValue_ { 0 };
 
     std::atomic<int> lastType_ { 0 };
     std::atomic<int> lastChannel_ { 0 };

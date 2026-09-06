@@ -1,4 +1,5 @@
 #include "PluginEditor.h"
+#include "Version.h"
 
 namespace
 {
@@ -7,13 +8,28 @@ namespace
         button.setColour (juce::TextButton::buttonColourId, colour);
         button.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
     }
+
+    juce::String bindingSuffix (const MidiBinding& binding)
+    {
+        if (! binding.assigned)
+            return {};
+
+        return "  ·  " + juce::String (MidiMapper::typeName (binding.type))
+             + " ch" + juce::String (binding.channel)
+             + " #" + juce::String (binding.number);
+    }
+
+    void updateLearnButton (juce::TextButton& button, const juce::String& title, const MidiBinding& binding)
+    {
+        button.setButtonText (title + bindingSuffix (binding));
+    }
 }
 
 EasyLooperEditor::EasyLooperEditor (EasyLooperProcessor& p)
     : juce::AudioProcessorEditor (p),
       processor_ (p)
 {
-    setSize (420, 720);
+    setSize (420, 760);
 
     styleMainButton (recordButton_, juce::Colour (0xffb42318));
     styleMainButton (playStopButton_, juce::Colour (0xff175cd3));
@@ -49,6 +65,10 @@ EasyLooperEditor::EasyLooperEditor (EasyLooperProcessor& p)
     setupLabel (midiNumberLabel_, 15, juce::Justification::centredLeft);
     setupLabel (midiValueLabel_, 15, juce::Justification::centredLeft);
     setupLabel (learnStatusLabel_, 14, juce::Justification::centred);
+    setupLabel (versionLabel_, 12, juce::Justification::centred);
+    versionLabel_.setColour (juce::Label::textColourId, juce::Colour (0xff98a2b3));
+    versionLabel_.setFont (juce::FontOptions (12.0f, juce::Font::plain));
+    versionLabel_.setText ("v" + juce::String (kEasyLooperVersion), juce::dontSendNotification);
 
     midiTitleLabel_.setText ("LAST MIDI", juce::dontSendNotification);
 
@@ -102,7 +122,10 @@ void EasyLooperEditor::layoutColumn (juce::Rectangle<int> area)
 
 void EasyLooperEditor::resized()
 {
-    layoutColumn (getLocalBounds().reduced (20));
+    auto area = getLocalBounds().reduced (20);
+    versionLabel_.setBounds (area.removeFromBottom (16));
+    area.removeFromBottom (6);
+    layoutColumn (area);
 }
 
 void EasyLooperEditor::timerCallback()
@@ -129,4 +152,10 @@ void EasyLooperEditor::timerCallback()
                                    juce::dontSendNotification);
     else
         learnStatusLabel_.setText ("MIDI LEARN: idle", juce::dontSendNotification);
+
+    updateLearnButton (learnRecordButton_, "Learn Record", mapper.getBinding (LooperCommand::Record));
+    updateLearnButton (learnPlayStopButton_, "Learn Play/Stop", mapper.getBinding (LooperCommand::PlayStop));
+    updateLearnButton (learnOverdubButton_, "Learn Overdub", mapper.getBinding (LooperCommand::Overdub));
+    updateLearnButton (learnUndoButton_, "Learn Undo", mapper.getBinding (LooperCommand::Undo));
+    updateLearnButton (learnClearButton_, "Learn Clear", mapper.getBinding (LooperCommand::Clear));
 }
