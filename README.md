@@ -20,10 +20,7 @@ brew install cmake
 W katalogu projektu (CMake 3.22+):
 
 ```bash
-cmake -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build
-./build/EasyLooperTests
-bash scripts/install-macos.sh
+tools/cmake-3.31.6-macos-universal/CMake.app/Contents/bin/cmake --build build --config Release && ./build/EasyLooperTests && ./scripts/install-macos.sh
 ```
 
 Skrypt kopiuje pluginy do:
